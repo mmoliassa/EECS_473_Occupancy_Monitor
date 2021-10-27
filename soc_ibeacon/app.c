@@ -33,13 +33,49 @@
 #include "gatt_db.h"
 #include "app.h"
 #include "ble_interface.h"
+#include "em_emu.h"
+#include "em_gpio.h"
+#include "em_cmu.h"
+
+#include "em_device.h"
+#include "em_chip.h"
+#include "em_rtc.h"
+#include "em_burtc.h"
+#include "em_rmu.h"
+#include "em_letimer.h"
 
 // Macros.
 #define UINT16_TO_BYTES(n)            ((uint8_t) (n)), ((uint8_t)((n) >> 8))
 #define UINT16_TO_BYTE0(n)            ((uint8_t) (n))
 #define UINT16_TO_BYTE1(n)            ((uint8_t) ((n) >> 8))
 
+#define LED_GPIO_PIN 0
+#define LED_GPIO_PORT gpioPortB
+
+#define BUTTON_PIN 1
+#define BUTTON_PORT gpioPortB
+
+#define SENSOR_INPUT_PORT gpioPortA
+#define SENSOR_INPUT_PIN 7
+
+#define DEBUG_OUTPUT_PORT gpioPortA
+#define DEBUG_OUTPUT_PIN 8
+
+#define BURTC_IRQ_PERIOD  1000
+
+#define TIME_DISABLE_GPIO 10//30
+#define TIMEOUT_OCCUPIED 30//300
+
+#define SENSOR_INPUT_MASK 1 << 7
+
+#define NUM_ADVERTISING_PACKETS 2
+
 uint8_t isOccupied = 0;
+uint8_t state = 0;
+uint8_t poscount = 0;
+uint8_t test = 0;
+
+void GPIO_SENSOR_IRQ(void);
 
 // The advertising set handle allocated from Bluetooth stack.
 //static uint8_t advertising_set_handle = 0xff;
@@ -54,12 +90,143 @@ uint8_t isOccupied = 0;
 /**************************************************************************//**
  * Application Init.
  *****************************************************************************/
+
+// TO DO: ADD DECREMENT OF POSCOUNT OVER TIME
+
+void GPIO_SENSOR_IRQ(void) {
+  // Clear the pin number bit
+  GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
+  uint32_t interruptMask = GPIO_IntGet();
+  poscount += 1;
+  GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
+
+  if(poscount >= 5){
+    GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
+    state = 1;
+    isOccupied = 1;
+
+    //enable and start
+    BURTC_CounterReset();
+    BURTC_CompareSet(0, TIME_DISABLE_GPIO * BURTC_IRQ_PERIOD);
+
+    BURTC_IntClear(BURTC_IF_COMP);
+    BURTC_IntEnable(BURTC_IF_COMP);
+    NVIC_EnableIRQ(BURTC_IRQn);
+
+    //disable GPIO interrupts
+    //GPIO_IntDisable(SENSOR_INPUT_MASK);
+
+    set_advertisement_packet(isOccupied);
+    start_BLE_advertising(NUM_ADVERTISING_PACKETS);
+  }
+  GPIO_IntClear(interruptMask);
+
+
+  if(poscount >= 5){
+      test = 50;
+      GPIO_IntDisable(SENSOR_INPUT_MASK);
+  }
+
+}
+
+void GPIO_ODD_IRQHandler(void)
+{
+  GPIO_SENSOR_IRQ();
+}
+
+void GPIO_init(void)
+{
+  CMU_ClockEnable(cmuClock_GPIO, true);
+
+  // Configure Port A8 as GPIO Output
+  GPIO_PinModeSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN, gpioModePushPull, 0);
+
+  // Configure Port A7 as input and enable interrupt
+  GPIO_PinModeSet(SENSOR_INPUT_PORT, SENSOR_INPUT_PIN, gpioModeInputPull, 0);
+  GPIO_ExtIntConfig(SENSOR_INPUT_PORT, SENSOR_INPUT_PIN, SENSOR_INPUT_PIN, true, false, true);
+
+  // Enable ODD interrupt to catch button press that changes slew rate
+  NVIC_ClearPendingIRQ(GPIO_ODD_IRQn);
+  NVIC_EnableIRQ(GPIO_ODD_IRQn);
+
+
+}
+/**************************************************************************//**
+ * @brief BURTC Interrupt Handler clears the flag
+ *****************************************************************************/
+void BURTC_IRQHandler(void)
+{
+  /* Clear interrupt source */
+  GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
+  BURTC_IntClear(BURTC_IF_COMP);
+
+  test++;
+
+  GPIO_IntEnable(SENSOR_INPUT_MASK);
+  BURTC_CounterReset();
+
+  // TO DO: ACCOUNT FOR STATE 0
+
+  if(state == 1){
+    state = 2;
+    BURTC_CompareSet(0, TIMEOUT_OCCUPIED * BURTC_IRQ_PERIOD);
+  }
+  else if (state == 2){
+    state = 0;
+    poscount = 0;
+    BURTC_IntClear(BURTC_IF_COMP);
+    NVIC_ClearPendingIRQ(BURTC_IRQn);
+    BURTC_Enable(false);
+    //send bluetooth
+    isOccupied = 0;
+    set_advertisement_packet(isOccupied);
+    start_BLE_advertising(NUM_ADVERTISING_PACKETS);
+  }
+
+  GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
+}
+
+/**************************************************************************//**
+ * @brief  Setup BURTC
+ * Using LFRCO clock source and enabling interrupt on COMP0 match
+ *****************************************************************************/
+void setupBurtc(void)
+{
+  CMU_ClockSelectSet(cmuClock_EM4GRPACLK, cmuSelect_ULFRCO);
+  CMU_ClockEnable(cmuClock_BURTC, true);
+  CMU_ClockEnable(cmuClock_BURAM, true);
+
+  BURTC_Init_TypeDef burtcInitvar = BURTC_INIT_DEFAULT;
+  burtcInitvar.clkDiv       = burtcClkDiv_1; /* Clock prescaler, set to 128 so one tick is 3.9 ms */
+  burtcInitvar.compare0Top  = true; /* Clear counter on compare match */
+  burtcInitvar.em4comp      = true;
+  burtcInitvar.em4overflow  = true;
+
+  /* Initialize BURTC */
+  BURTC_Init(&burtcInitvar);
+
+  BURTC_CounterReset();
+  BURTC_CompareSet(0, BURTC_IRQ_PERIOD * TIME_DISABLE_GPIO);
+
+  BURTC_IntClear(BURTC_IF_COMP);
+  BURTC_IntEnable(BURTC_IF_COMP);    // compare match
+  NVIC_ClearPendingIRQ(BURTC_IRQn);
+  NVIC_EnableIRQ(BURTC_IRQn);
+  BURTC_Enable(true);
+
+  BURTC_IntClear(BURTC_IF_COMP);
+  NVIC_ClearPendingIRQ(BURTC_IRQn);
+  BURTC_IntDisable(BURTC_IF_COMP);
+
+}
+
+
 SL_WEAK void app_init(void)
 {
-  /////////////////////////////////////////////////////////////////////////////
-  // Put your additional application init code here!                         //
-  // This is called once during start-up.                                    //
-  /////////////////////////////////////////////////////////////////////////////
+  setupBurtc();
+  GPIO_init();
+  EMU_EnterEM3(false);
+
 }
 
 /**************************************************************************//**
@@ -67,23 +234,6 @@ SL_WEAK void app_init(void)
  *****************************************************************************/
 SL_WEAK void app_process_action(void)
 {
-  sl_bt_external_signal(sl_bt_evt_system_external_signal_id);
-  //start_BLE_advertising(1000);
-     //stop_BLE_advertising();
-
-  for(volatile int i = 0; i<300000; ++i){}
-
-  //set_advertisement_packet(1);
-
-     //start_BLE_advertising(1000);
-
-     //start_BLE_advertising(1000);
-
-     //set_advertisement_packet(0);
-
-  //for(volatile int i = 0; i<30000; ++i){}
-
-
 
   /////////////////////////////////////////////////////////////////////////////
   // Put your additional application code here!                              //
@@ -115,14 +265,15 @@ void sl_bt_on_event(sl_bt_msg_t *evt)
       (void)ret_power_max;
       // Initialize iBeacon ADV data.
       init_BLE_advertising();
-      //start_BLE_advertising(10);
-      //for(volatile int i = 0; i < 100000; ++i){}
-      //set_advertisement_packet(1);
-      //start_BLE_advertising(10);
+
       break;
 
     case sl_bt_evt_system_external_signal_id:
-      start_BLE_advertising(10);
+      break;
+
+    case sl_bt_evt_advertiser_timeout_id:
+      GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
+      EMU_EnterEM3(false);
       break;
 
     ///////////////////////////////////////////////////////////////////////////
@@ -135,42 +286,3 @@ void sl_bt_on_event(sl_bt_msg_t *evt)
       break;
   }
 }
-/*
-static void setup_beacon_advertising(void)
-{
-  sl_status_t sc;
-
-  iBeaconAdvertisement advertising_data;
-  set_advertisement_packet(&advertising_data, isOccupied);
-
-  // Create an advertising set.
-  sc = sl_bt_advertiser_create_set(&advertising_set_handle);
-  app_assert_status(sc);
-
-
-  // Set custom advertising data.
-  sc = sl_bt_advertiser_set_data(advertising_set_handle,
-                                 0,
-                                 sizeof(advertising_data),
-                                 (uint8_t *)(&advertising_data));
-
-  set_advertisement_packet(&sc, isOccupied);
-  app_assert_status(sc);
-
-  // Set advertising parameters. 100ms advertisement interval.
-  sc = sl_bt_advertiser_set_timing(
-    advertising_set_handle,
-    160,     // min. adv. interval (milliseconds * 1.6)
-    160,     // max. adv. interval (milliseconds * 1.6)
-    0,       // adv. duration
-    0);      // max. num. adv. events
-  app_assert_status(sc);
-
-  // Start advertising in user mode and disable connections.
-  sc = sl_bt_advertiser_start(
-    advertising_set_handle,
-    sl_bt_advertiser_user_data,
-    sl_bt_advertiser_non_connectable);
-  app_assert_status(sc);
-}
-*/

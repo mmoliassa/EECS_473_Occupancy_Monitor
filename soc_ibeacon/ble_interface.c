@@ -117,6 +117,15 @@ uint8_t UUID[] = {0x78, 0xE3, 0xB3,
 
    sl_status_t sc;
 
+   // Set advertising parameters. 100ms advertisement interval.
+   sc = sl_bt_advertiser_set_timing(
+     advertising_set_handle,
+     160,     // min. adv. interval (milliseconds * 1.6)
+     160,     // max. adv. interval (milliseconds * 1.6)
+     0,  // adv. duration
+     1);      // max. num. adv. events
+   app_assert_status(sc);
+
 
    sc = sl_bt_advertiser_set_data(advertising_set_handle,
                                          0,
@@ -149,14 +158,6 @@ uint8_t UUID[] = {0x78, 0xE3, 0xB3,
 
    app_assert_status(sc);
 
-   // Set advertising parameters. 100ms advertisement interval.
-   sc = sl_bt_advertiser_set_timing(
-     advertising_set_handle,
-     160,     // min. adv. interval (milliseconds * 1.6)
-     160,     // max. adv. interval (milliseconds * 1.6)
-     10,  // adv. duration
-     5);      // max. num. adv. events
-   app_assert_status(sc);
  }
 
  void send_data(char * data){

@@ -61,7 +61,7 @@ int main(void)
     sl_system_process_action();
 
     // Application process.
-    app_process_action();
+    //app_process_action();
 
 #if defined(SL_CATALOG_POWER_MANAGER_PRESENT)
     // Let the CPU go to sleep if the system allows it.
