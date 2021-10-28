@@ -57,16 +57,20 @@
 
 #define SENSOR_INPUT_PORT gpioPortA
 #define SENSOR_INPUT_PIN 7
+//#define SENSOR_INPUT_PORT gpioPortB
+//#define SENSOR_INPUT_PIN 1
+
 
 #define DEBUG_OUTPUT_PORT gpioPortA
 #define DEBUG_OUTPUT_PIN 8
 
 #define BURTC_IRQ_PERIOD  1000
 
-#define TIME_DISABLE_GPIO 10//30
-#define TIMEOUT_OCCUPIED 30//300
+#define TIME_DISABLE_GPIO 5 // (T1)
+#define TIMEOUT_OCCUPIED 15  // (T2)
+#define TIMEOUT_CLEAR_POSCOUNT 30  // (T3)
 
-#define SENSOR_INPUT_MASK 1 << 7
+#define SENSOR_INPUT_MASK 1 << SENSOR_INPUT_PIN
 
 #define NUM_ADVERTISING_PACKETS 2
 
@@ -109,21 +113,13 @@ void GPIO_SENSOR_IRQ(void) {
     BURTC_CounterReset();
     BURTC_CompareSet(0, TIME_DISABLE_GPIO * BURTC_IRQ_PERIOD);
 
-    BURTC_IntClear(BURTC_IF_COMP);
-    BURTC_IntEnable(BURTC_IF_COMP);
-    NVIC_EnableIRQ(BURTC_IRQn);
-
-    //disable GPIO interrupts
-    //GPIO_IntDisable(SENSOR_INPUT_MASK);
-
     set_advertisement_packet(isOccupied);
     start_BLE_advertising(NUM_ADVERTISING_PACKETS);
   }
+  //disable GPIO interrupts
   GPIO_IntClear(interruptMask);
 
-
   if(poscount >= 5){
-      test = 50;
       GPIO_IntDisable(SENSOR_INPUT_MASK);
   }
 
@@ -132,6 +128,7 @@ void GPIO_SENSOR_IRQ(void) {
 void GPIO_ODD_IRQHandler(void)
 {
   GPIO_SENSOR_IRQ();
+  EMU_EnterEM3(false);
 }
 
 void GPIO_init(void)
@@ -142,7 +139,7 @@ void GPIO_init(void)
   GPIO_PinModeSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN, gpioModePushPull, 0);
 
   // Configure Port A7 as input and enable interrupt
-  GPIO_PinModeSet(SENSOR_INPUT_PORT, SENSOR_INPUT_PIN, gpioModeInputPull, 0);
+  GPIO_PinModeSet(SENSOR_INPUT_PORT, SENSOR_INPUT_PIN, gpioModeInput, 0);
   GPIO_ExtIntConfig(SENSOR_INPUT_PORT, SENSOR_INPUT_PIN, SENSOR_INPUT_PIN, true, false, true);
 
   // Enable ODD interrupt to catch button press that changes slew rate
@@ -160,12 +157,8 @@ void BURTC_IRQHandler(void)
   GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
   BURTC_IntClear(BURTC_IF_COMP);
 
-  test++;
-
   GPIO_IntEnable(SENSOR_INPUT_MASK);
   BURTC_CounterReset();
-
-  // TO DO: ACCOUNT FOR STATE 0
 
   if(state == 1){
     state = 2;
@@ -174,16 +167,18 @@ void BURTC_IRQHandler(void)
   else if (state == 2){
     state = 0;
     poscount = 0;
-    BURTC_IntClear(BURTC_IF_COMP);
-    NVIC_ClearPendingIRQ(BURTC_IRQn);
-    BURTC_Enable(false);
+    BURTC_CompareSet(0, TIMEOUT_CLEAR_POSCOUNT * BURTC_IRQ_PERIOD);
     //send bluetooth
     isOccupied = 0;
     set_advertisement_packet(isOccupied);
     start_BLE_advertising(NUM_ADVERTISING_PACKETS);
   }
+  else if (state == 0){
+    poscount = 0;
+  }
 
   GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
+  EMU_EnterEM3(false);
 }
 
 /**************************************************************************//**
@@ -206,17 +201,13 @@ void setupBurtc(void)
   BURTC_Init(&burtcInitvar);
 
   BURTC_CounterReset();
-  BURTC_CompareSet(0, BURTC_IRQ_PERIOD * TIME_DISABLE_GPIO);
+  BURTC_CompareSet(0, BURTC_IRQ_PERIOD * TIMEOUT_CLEAR_POSCOUNT);
 
   BURTC_IntClear(BURTC_IF_COMP);
   BURTC_IntEnable(BURTC_IF_COMP);    // compare match
   NVIC_ClearPendingIRQ(BURTC_IRQn);
   NVIC_EnableIRQ(BURTC_IRQn);
   BURTC_Enable(true);
-
-  BURTC_IntClear(BURTC_IF_COMP);
-  NVIC_ClearPendingIRQ(BURTC_IRQn);
-  BURTC_IntDisable(BURTC_IF_COMP);
 
 }
 
