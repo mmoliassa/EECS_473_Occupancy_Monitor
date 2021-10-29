@@ -123,7 +123,7 @@ uint8_t UUID[] = {0x78, 0xE3, 0xB3,
      160,     // min. adv. interval (milliseconds * 1.6)
      160,     // max. adv. interval (milliseconds * 1.6)
      0,  // adv. duration
-     1);      // max. num. adv. events
+     duration);      // max. num. adv. events
    app_assert_status(sc);
 
 

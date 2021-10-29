@@ -55,10 +55,10 @@
 #define BUTTON_PIN 1
 #define BUTTON_PORT gpioPortB
 
-#define SENSOR_INPUT_PORT gpioPortA
-#define SENSOR_INPUT_PIN 7
-//#define SENSOR_INPUT_PORT gpioPortB
-//#define SENSOR_INPUT_PIN 1
+//#define SENSOR_INPUT_PORT gpioPortA
+//#define SENSOR_INPUT_PIN 7
+#define SENSOR_INPUT_PORT gpioPortB
+#define SENSOR_INPUT_PIN 1
 
 
 #define DEBUG_OUTPUT_PORT gpioPortA
@@ -78,6 +78,9 @@ uint8_t isOccupied = 0;
 uint8_t state = 0;
 uint8_t poscount = 0;
 uint8_t test = 0;
+uint8_t GPIO_flag = 0;
+uint8_t BURTC_flag = 0;
+
 
 void GPIO_SENSOR_IRQ(void);
 
@@ -97,6 +100,9 @@ void GPIO_SENSOR_IRQ(void);
 
 // TO DO: ADD DECREMENT OF POSCOUNT OVER TIME
 
+// TO DO: ADD Counter
+
+
 void GPIO_SENSOR_IRQ(void) {
   // Clear the pin number bit
   GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
@@ -112,7 +118,7 @@ void GPIO_SENSOR_IRQ(void) {
     //enable and start
     BURTC_CounterReset();
     BURTC_CompareSet(0, TIME_DISABLE_GPIO * BURTC_IRQ_PERIOD);
-
+    GPIO_flag = 1;
     set_advertisement_packet(isOccupied);
     start_BLE_advertising(NUM_ADVERTISING_PACKETS);
   }
@@ -128,7 +134,12 @@ void GPIO_SENSOR_IRQ(void) {
 void GPIO_ODD_IRQHandler(void)
 {
   GPIO_SENSOR_IRQ();
-  EMU_EnterEM3(false);
+  if(GPIO_flag == 0){
+      EMU_EnterEM3(true);
+  }
+  else{
+      GPIO_flag = 0;
+  }
 }
 
 void GPIO_init(void)
@@ -160,25 +171,31 @@ void BURTC_IRQHandler(void)
   GPIO_IntEnable(SENSOR_INPUT_MASK);
   BURTC_CounterReset();
 
-  if(state == 1){
+  if(state == 1) {
     state = 2;
     BURTC_CompareSet(0, TIMEOUT_OCCUPIED * BURTC_IRQ_PERIOD);
   }
-  else if (state == 2){
+  else if (state == 2) {
     state = 0;
     poscount = 0;
     BURTC_CompareSet(0, TIMEOUT_CLEAR_POSCOUNT * BURTC_IRQ_PERIOD);
     //send bluetooth
     isOccupied = 0;
+    BURTC_flag = 1;
     set_advertisement_packet(isOccupied);
-    start_BLE_advertising(NUM_ADVERTISING_PACKETS);
+    start_BLE_advertising(5);
   }
-  else if (state == 0){
+  else if (state == 0) {
     poscount = 0;
   }
 
   GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
-  EMU_EnterEM3(false);
+  if(BURTC_flag == 0) {
+      EMU_EnterEM3(true);
+  }
+  else {
+      BURTC_flag = 0;
+  }
 }
 
 /**************************************************************************//**
@@ -216,7 +233,7 @@ SL_WEAK void app_init(void)
 {
   setupBurtc();
   GPIO_init();
-  EMU_EnterEM3(false);
+  EMU_EnterEM3(true);
 
 }
 
