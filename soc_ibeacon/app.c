@@ -80,7 +80,8 @@ uint8_t poscount = 0;
 uint8_t test = 0;
 uint8_t GPIO_flag = 0;
 uint8_t BURTC_flag = 0;
-
+uint8_t em3_flag = 0;
+uint8_t counter = 0;
 
 
 /* NOTE: Not always consistent on sending the 1 after an unoccupied send. Need to figure out what is happening there
@@ -116,17 +117,20 @@ void GPIO_SENSOR_IRQ(void);
 void enterEM3(void) {
 
   //GPIO_PinOutSet(LED_GPIO_PORT, LED_GPIO_PIN);
-  EMU_EnterEM2(false);
+  EMU_EnterEM3(false);
   //GPIO_PinOutClear(LED_GPIO_PORT, LED_GPIO_PIN);
 
 }
 
 void GPIO_SENSOR_IRQ(void) {
+  counter = 0;
   // Clear the pin number bit
   //GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
   //GPIO_PinOutToggle(LED_GPIO_PORT, LED_GPIO_PIN);
   uint32_t interruptMask = GPIO_IntGet();
+  counter++;
   poscount += 1;
+  counter++;
   //GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
 
   if(poscount >= 5){
@@ -137,28 +141,31 @@ void GPIO_SENSOR_IRQ(void) {
     //enable and start
     BURTC_CounterReset();
     BURTC_CompareSet(0, TIME_DISABLE_GPIO * BURTC_IRQ_PERIOD);
-    GPIO_flag = 1;
+    em3_flag = 1;
     set_advertisement_packet(isOccupied);
     start_BLE_advertising(5);
   }
+  counter++;
   //disable GPIO interrupts
   GPIO_IntClear(interruptMask);
-
+  counter++;
   if(poscount >= 5){
       GPIO_IntDisable(SENSOR_INPUT_MASK);
   }
+  counter++;
 
 }
 
 void GPIO_ODD_IRQHandler(void)
 {
   GPIO_SENSOR_IRQ();
-  if(GPIO_flag == 0){
+  counter = 10;
+//  if(GPIO_flag == 0){
       //EMU_EnterEM2(true);
-  }
-  else{
-      GPIO_flag = 0;
-  }
+//  }
+//  else{
+//      GPIO_flag = 0;
+//  }
 }
 
 void GPIO_init(void)
@@ -203,7 +210,7 @@ void BURTC_IRQHandler(void)
     BURTC_CompareSet(0, TIMEOUT_CLEAR_POSCOUNT * BURTC_IRQ_PERIOD);
     //send bluetooth
     isOccupied = 0;
-    BURTC_flag = 1;
+    em3_flag = 1;
     set_advertisement_packet(isOccupied);
     start_BLE_advertising(5);
   }
@@ -212,12 +219,13 @@ void BURTC_IRQHandler(void)
   }
 
   GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
-  if(BURTC_flag == 0) {
-      //EMU_EnterEM2(true);
-  }
-  else {
-      BURTC_flag = 0;
-  }
+  //if(BURTC_flag == 0) {
+  //    enterEM3();
+      //EMU_EnterEM3(true);
+  //}
+  //else {
+  //    BURTC_flag = 0;
+  //}
 }
 
 /**************************************************************************//**
@@ -256,6 +264,7 @@ SL_WEAK void app_init(void)
   setupBurtc();
   GPIO_init();
   //EMU_EnterEM2(false);
+  enterEM3();
   GPIO_PinOutClear(LED_GPIO_PORT, LED_GPIO_PIN);
 }
 
@@ -303,6 +312,8 @@ void sl_bt_on_event(sl_bt_msg_t *evt)
 
     case sl_bt_evt_advertiser_timeout_id:
       //GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
+      em3_flag = 0;
+      //enterEM3();
       //EMU_EnterEM2(false);
       break;
 
