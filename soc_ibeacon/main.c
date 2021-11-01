@@ -62,7 +62,10 @@ int main(void)
 
     // Application process.
     //app_process_action();
+
     //EMU_EnterEM3(false);
+    enterEM3();
+
 
 #if defined(SL_CATALOG_POWER_MANAGER_PRESENT)
     // Let the CPU go to sleep if the system allows it.
