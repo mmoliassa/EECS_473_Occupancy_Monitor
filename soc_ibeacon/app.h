@@ -41,4 +41,7 @@ void app_init(void);
  *****************************************************************************/
 void app_process_action(void);
 
+void enterEM3(void);
+
+
 #endif // APP_H
