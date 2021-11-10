@@ -55,10 +55,10 @@
 #define BUTTON_PIN 1
 #define BUTTON_PORT gpioPortB
 
-//#define SENSOR_INPUT_PORT gpioPortA
-//#define SENSOR_INPUT_PIN 7
-#define SENSOR_INPUT_PORT gpioPortB
-#define SENSOR_INPUT_PIN 1
+#define SENSOR_INPUT_PORT gpioPortA
+#define SENSOR_INPUT_PIN 7
+//#define SENSOR_INPUT_PORT gpioPortB
+//#define SENSOR_INPUT_PIN 1
 
 
 #define DEBUG_OUTPUT_PORT gpioPortA
@@ -66,7 +66,7 @@
 
 #define BURTC_IRQ_PERIOD  1000
 
-#define TIME_DISABLE_GPIO 5 // (T1)
+#define TIME_DISABLE_GPIO 7 // (T1)
 #define TIMEOUT_OCCUPIED 15  // (T2)
 #define TIMEOUT_CLEAR_POSCOUNT 30  // (T3)
 
@@ -197,7 +197,7 @@ void BURTC_IRQHandler(void)
   GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
   BURTC_IntClear(BURTC_IF_COMP);
 
-  GPIO_IntEnable(SENSOR_INPUT_MASK);
+  //GPIO_IntEnable(SENSOR_INPUT_MASK);
   BURTC_CounterReset();
 
   if(state == 1) {
@@ -217,15 +217,9 @@ void BURTC_IRQHandler(void)
   else if (state == 0) {
     poscount = 0;
   }
-
+  GPIO_IntEnable(SENSOR_INPUT_MASK);
   GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
-  //if(BURTC_flag == 0) {
-  //    enterEM3();
-      //EMU_EnterEM3(true);
-  //}
-  //else {
-  //    BURTC_flag = 0;
-  //}
+
 }
 
 /**************************************************************************//**
@@ -311,10 +305,7 @@ void sl_bt_on_event(sl_bt_msg_t *evt)
       break;
 
     case sl_bt_evt_advertiser_timeout_id:
-      //GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
       em3_flag = 0;
-      //enterEM3();
-      //EMU_EnterEM2(false);
       break;
 
     ///////////////////////////////////////////////////////////////////////////
