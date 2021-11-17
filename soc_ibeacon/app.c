@@ -60,15 +60,18 @@
 //#define SENSOR_INPUT_PORT gpioPortB
 //#define SENSOR_INPUT_PIN 1
 
+#define TEST_PORT gpioPortB
+#define TEST_PIN 3
+
 
 #define DEBUG_OUTPUT_PORT gpioPortA
 #define DEBUG_OUTPUT_PIN 8
 
 #define BURTC_IRQ_PERIOD  1000
 
-#define TIME_DISABLE_GPIO 7 // (T1)
-#define TIMEOUT_OCCUPIED 15  // (T2)
-#define TIMEOUT_CLEAR_POSCOUNT 30  // (T3)
+#define TIME_DISABLE_GPIO 30//7 // (T1)
+#define TIMEOUT_OCCUPIED 90//15  // (T2)
+#define TIMEOUT_CLEAR_POSCOUNT 60//30  // (T3)
 
 #define SENSOR_INPUT_MASK 1 << SENSOR_INPUT_PIN
 
@@ -123,36 +126,34 @@ void enterEM3(void) {
 }
 
 void GPIO_SENSOR_IRQ(void) {
-  counter = 0;
   // Clear the pin number bit
   //GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
   //GPIO_PinOutToggle(LED_GPIO_PORT, LED_GPIO_PIN);
   uint32_t interruptMask = GPIO_IntGet();
-  counter++;
   poscount += 1;
-  counter++;
   //GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
 
   if(poscount >= 5){
-    GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
-    state = 1;
-    isOccupied = 1;
-
     //enable and start
+    if(state != 0) {
+        state = 1;
+    }
+
     BURTC_CounterReset();
     BURTC_CompareSet(0, TIME_DISABLE_GPIO * BURTC_IRQ_PERIOD);
-    em3_flag = 1;
-    set_advertisement_packet(isOccupied);
-    start_BLE_advertising(5);
+    if(state == 0){
+        state = 1;
+        isOccupied = 1;
+        em3_flag = 1;
+        set_advertisement_packet(isOccupied);
+        start_BLE_advertising(5);
+    }
   }
-  counter++;
   //disable GPIO interrupts
   GPIO_IntClear(interruptMask);
-  counter++;
   if(poscount >= 5){
       GPIO_IntDisable(SENSOR_INPUT_MASK);
   }
-  counter++;
 
 }
 
@@ -173,9 +174,11 @@ void GPIO_init(void)
   CMU_ClockEnable(cmuClock_GPIO, true);
 
   // Configure Port A8 as GPIO Output
-  GPIO_PinModeSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN, gpioModePushPull, 0);
+  GPIO_PinModeSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN, gpioModePushPull, 1);
 
-  GPIO_PinModeSet(LED_GPIO_PORT, LED_GPIO_PIN, gpioModePushPull, 0);
+  GPIO_PinModeSet(TEST_PORT, TEST_PIN, gpioModePushPull, 1);
+
+  GPIO_PinModeSet(LED_GPIO_PORT, LED_GPIO_PIN, gpioModePushPull, 1);
 
   // Configure Port A7 as input and enable interrupt
   GPIO_PinModeSet(SENSOR_INPUT_PORT, SENSOR_INPUT_PIN, gpioModeInput, 0);
@@ -194,7 +197,7 @@ void BURTC_IRQHandler(void)
 {
   //GPIO_PinOutToggle(LED_GPIO_PORT, LED_GPIO_PIN);
   /* Clear interrupt source */
-  GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
+  //GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
   BURTC_IntClear(BURTC_IF_COMP);
 
   //GPIO_IntEnable(SENSOR_INPUT_MASK);
@@ -218,7 +221,7 @@ void BURTC_IRQHandler(void)
     poscount = 0;
   }
   GPIO_IntEnable(SENSOR_INPUT_MASK);
-  GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
+  //GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
 
 }
 
@@ -257,9 +260,12 @@ SL_WEAK void app_init(void)
 {
   setupBurtc();
   GPIO_init();
-  //EMU_EnterEM2(false);
-  enterEM3();
-  GPIO_PinOutClear(LED_GPIO_PORT, LED_GPIO_PIN);
+  //em3_flag = 1;
+  //isOccupied = 0;
+  //set_advertisement_packet(isOccupied);
+  //start_BLE_advertising(5);
+  //enterEM3();
+  //GPIO_PinOutClear(LED_GPIO_PORT, LED_GPIO_PIN);
 }
 
 /**************************************************************************//**
@@ -298,6 +304,10 @@ void sl_bt_on_event(sl_bt_msg_t *evt)
       (void)ret_power_max;
       // Initialize iBeacon ADV data.
       init_BLE_advertising();
+      //em3_flag = 1;
+      //isOccupied = 0;
+      //set_advertisement_packet(isOccupied);
+      //start_BLE_advertising(5);
 
       break;
 

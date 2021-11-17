@@ -41,7 +41,7 @@
 #endif // SL_CATALOG_KERNEL_PRESENT
 
 extern uint8_t em3_flag;
-
+extern uint8_t isOccupied;
 int main(void)
 {
   // Initialize Silicon Labs device, system, service(s) and protocol stack(s).
@@ -66,9 +66,9 @@ int main(void)
     //app_process_action();
 
     //EMU_EnterEM3(false);
-    if(em3_flag == 0){
-        enterEM3();
-    }
+    //if(em3_flag == 0){
+    //    enterEM3();
+    //}
 
 /*
 #if defined(SL_CATALOG_POWER_MANAGER_PRESENT)
