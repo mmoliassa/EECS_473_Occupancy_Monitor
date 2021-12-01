@@ -31,6 +31,8 @@
 #include "sl_system_init.h"
 #include "app.h"
 #include "ble_interface.h"
+#include "em_gpio.h"
+
 #if defined(SL_CATALOG_POWER_MANAGER_PRESENT)
 #include "sl_power_manager.h"
 #endif // SL_CATALOG_POWER_MANAGER_PRESENT
@@ -53,6 +55,7 @@ int main(void)
   // task(s) if the kernel is present.
   app_init();
 
+
 #if defined(SL_CATALOG_KERNEL_PRESENT)
   // Start the kernel. Task(s) created in app_init() will start running.
   sl_system_kernel_start();
@@ -61,14 +64,12 @@ int main(void)
     // Do not remove this call: Silicon Labs components process action routine
     // must be called from the super loop.
     sl_system_process_action();
-
     // Application process.
     //app_process_action();
 
-    //EMU_EnterEM3(false);
-    //if(em3_flag == 0){
-    //    enterEM3();
-    //}
+    if(em3_flag == 0){
+        enterEM3();
+    }
 
 /*
 #if defined(SL_CATALOG_POWER_MANAGER_PRESENT)

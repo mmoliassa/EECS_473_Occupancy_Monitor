@@ -60,22 +60,21 @@
 //#define SENSOR_INPUT_PORT gpioPortB
 //#define SENSOR_INPUT_PIN 1
 
-#define TEST_PORT gpioPortB
-#define TEST_PIN 3
-
-
 #define DEBUG_OUTPUT_PORT gpioPortA
 #define DEBUG_OUTPUT_PIN 8
 
 #define BURTC_IRQ_PERIOD  1000
 
-#define TIME_DISABLE_GPIO 30//7 // (T1)
-#define TIMEOUT_OCCUPIED 90//15  // (T2)
+#define TIME_DISABLE_GPIO 5//30//7 // (T1)
+#define TIMEOUT_OCCUPIED 15//90//15  // (T2)
 #define TIMEOUT_CLEAR_POSCOUNT 60//30  // (T3)
 
 #define SENSOR_INPUT_MASK 1 << SENSOR_INPUT_PIN
 
 #define NUM_ADVERTISING_PACKETS 2
+
+#define LETIMER_PERIOD 32768
+#define PERIODIC_UPDATE 120
 
 uint8_t isOccupied = 0;
 uint8_t state = 0;
@@ -99,7 +98,6 @@ uint8_t counter = 0;
 void GPIO_SENSOR_IRQ(void);
 
 // The advertising set handle allocated from Bluetooth stack.
-//static uint8_t advertising_set_handle = 0xff;
 
 /**************************************************************************//**
  * Set up a custom advertisement package according to iBeacon specifications.
@@ -116,22 +114,15 @@ void GPIO_SENSOR_IRQ(void);
 
 // TO DO: ADD Counter
 
-
 void enterEM3(void) {
-
-  //GPIO_PinOutSet(LED_GPIO_PORT, LED_GPIO_PIN);
   EMU_EnterEM3(false);
-  //GPIO_PinOutClear(LED_GPIO_PORT, LED_GPIO_PIN);
-
 }
 
 void GPIO_SENSOR_IRQ(void) {
   // Clear the pin number bit
-  //GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
-  //GPIO_PinOutToggle(LED_GPIO_PORT, LED_GPIO_PIN);
+
   uint32_t interruptMask = GPIO_IntGet();
   poscount += 1;
-  //GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
 
   if(poscount >= 5){
     //enable and start
@@ -145,8 +136,9 @@ void GPIO_SENSOR_IRQ(void) {
         state = 1;
         isOccupied = 1;
         em3_flag = 1;
+        reset_LETimer();
         set_advertisement_packet(isOccupied);
-        start_BLE_advertising(5);
+        start_BLE_advertising(6);
     }
   }
   //disable GPIO interrupts
@@ -160,23 +152,13 @@ void GPIO_SENSOR_IRQ(void) {
 void GPIO_ODD_IRQHandler(void)
 {
   GPIO_SENSOR_IRQ();
-  counter = 10;
-//  if(GPIO_flag == 0){
-      //EMU_EnterEM2(true);
-//  }
-//  else{
-//      GPIO_flag = 0;
-//  }
+
 }
 
 void GPIO_init(void)
 {
   CMU_ClockEnable(cmuClock_GPIO, true);
 
-  // Configure Port A8 as GPIO Output
-  GPIO_PinModeSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN, gpioModePushPull, 1);
-
-  GPIO_PinModeSet(TEST_PORT, TEST_PIN, gpioModePushPull, 1);
 
   GPIO_PinModeSet(LED_GPIO_PORT, LED_GPIO_PIN, gpioModePushPull, 1);
 
@@ -195,12 +177,9 @@ void GPIO_init(void)
  *****************************************************************************/
 void BURTC_IRQHandler(void)
 {
-  //GPIO_PinOutToggle(LED_GPIO_PORT, LED_GPIO_PIN);
   /* Clear interrupt source */
-  //GPIO_PinOutSet(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
   BURTC_IntClear(BURTC_IF_COMP);
 
-  //GPIO_IntEnable(SENSOR_INPUT_MASK);
   BURTC_CounterReset();
 
   if(state == 1) {
@@ -214,14 +193,14 @@ void BURTC_IRQHandler(void)
     //send bluetooth
     isOccupied = 0;
     em3_flag = 1;
+    reset_LETimer();
     set_advertisement_packet(isOccupied);
-    start_BLE_advertising(5);
+    start_BLE_advertising(6);
   }
   else if (state == 0) {
     poscount = 0;
   }
   GPIO_IntEnable(SENSOR_INPUT_MASK);
-  //GPIO_PinOutClear(DEBUG_OUTPUT_PORT, DEBUG_OUTPUT_PIN);
 
 }
 
@@ -256,10 +235,74 @@ void setupBurtc(void)
 }
 
 
+void LETIMER0_IRQHandler(void)
+{
+  LETIMER_IntClear(LETIMER0, LETIMER_IF_UF);
+  GPIO_PinOutToggle(LED_GPIO_PORT, LED_GPIO_PIN);
+  em3_flag = 1;
+  set_advertisement_packet(isOccupied);
+  start_BLE_advertising(5);
+}
+
+void init_LETIMER_clocks(void)
+{
+  CMU_LFXOInit_TypeDef lfxoInit = CMU_LFXOINIT_DEFAULT;
+
+  // Select LFXO for the LETIMER
+  CMU_LFXOInit(&lfxoInit);
+
+  CMU_ClockSelectSet(cmuClock_EM23GRPACLK, cmuSelect_LFXO);
+
+
+  CMU_ClockEnable(cmuClock_LETIMER0, true);
+
+}
+
+/* LETIMER is a downcounter. Can set compare0 number as the top value.
+ * Interrupt when underflow occurs.
+ * Can set the counter back to a certain count if needed.
+ */
+void init_LETimer(void)
+{
+  //LETIMER_TypeDef letimer;
+
+  // Enable clock to the LE modules interface
+  //CMU_ClockEnable(cmuClock_HFLE, true);
+
+  // Select LFXO for the LETIMER
+  //CMU_ClockSelectSet(cmuClock_LFA, cmuSelect_LFXO);
+
+  init_LETIMER_clocks();
+
+  LETIMER_Init_TypeDef init = LETIMER_INIT_DEFAULT;
+
+  LETIMER_IntEnable(LETIMER0, LETIMER_IF_UF);
+
+  // Calculate the top value (frequency) based on clock source
+  uint32_t topValue = CMU_ClockFreqGet(cmuClock_LETIMER0) * PERIODIC_UPDATE;// / OUT_FREQ;
+
+  // Reload top on underflow, pulse output, and run in free mode
+  init.comp0Top = true;
+  init.topValue = topValue;
+  init.ufoa0 = letimerUFOANone;
+  init.repMode = letimerRepeatFree;
+
+  LETIMER_Init(LETIMER0, &init);
+
+  NVIC_EnableIRQ(LETIMER0_IRQn);
+}
+
+void reset_LETimer(void)
+{
+  LETIMER_CounterSet(LETIMER0, CMU_ClockFreqGet(cmuClock_LETIMER0) * PERIODIC_UPDATE);
+}
+
+
 SL_WEAK void app_init(void)
 {
   setupBurtc();
   GPIO_init();
+  init_LETimer();
   //em3_flag = 1;
   //isOccupied = 0;
   //set_advertisement_packet(isOccupied);
@@ -304,10 +347,6 @@ void sl_bt_on_event(sl_bt_msg_t *evt)
       (void)ret_power_max;
       // Initialize iBeacon ADV data.
       init_BLE_advertising();
-      //em3_flag = 1;
-      //isOccupied = 0;
-      //set_advertisement_packet(isOccupied);
-      //start_BLE_advertising(5);
 
       break;
 
